@@ -1,6 +1,6 @@
 {
   "name": "phi-pii-deid",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Offline share-safe helper for scanning, redacting, verifying, and reporting likely PHI/PII in FHIR JSON artifacts.",
   "type": "module",
   "homepage": "https://github.com/abhishek-bhatkar/phi-pii-deid#readme",
@@ -16,6 +16,8 @@
   },
   "files": [
     "dist",
+    "demo",
+    "RULES.md",
     "README.md",
     "LICENSE"
   ],

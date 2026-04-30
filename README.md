@@ -28,6 +28,10 @@ node dist/cli.js report /tmp/sanitized-fhir.json --out /tmp/sanitized-fhir-repor
 
 Use `--csv-out <file.csv>` for a custom CSV path.
 
+## Demo
+
+Open [demo/index.html](demo/index.html) in a browser for a local paste-and-preview demo. It runs in the browser only; no upload or server is used.
+
 ## Commands
 
 ```bash
@@ -58,6 +62,8 @@ node dist/cli.js deidentify input.json --out output.json --mode strict-safe-harb
 Additional strict checks include dates except year, ages over 89, fax, health plan beneficiary numbers, account numbers, license/certificate numbers, vehicle IDs, device IDs, IPs, biometrics, and image/attachment-like fields.
 
 `--cms-report` suppresses small aggregate report counts from `1-10` as `<11` in Markdown summaries. It does not perform full CMS output review.
+
+See [RULES.md](RULES.md) for rule IDs, placeholders, and known false positives.
 
 ## Limits
 

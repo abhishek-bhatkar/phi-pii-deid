@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>phi-pii-deid demo</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f8fa;
+        --panel: #ffffff;
+        --text: #172033;
+        --muted: #5f6b7a;
+        --border: #d9dee7;
+        --accent: #0f766e;
+        --danger: #b42318;
+        --warn: #b54708;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      header,
+      main {
+        width: min(1180px, calc(100vw - 32px));
+        margin: 0 auto;
+      }
+
+      header {
+        padding: 28px 0 18px;
+      }
+
+      h1 {
+        margin: 0 0 6px;
+        font-size: 28px;
+        font-weight: 700;
+      }
+
+      p {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      .toolbar {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin: 18px 0;
+      }
+
+      button,
+      select {
+        height: 36px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--panel);
+        color: var(--text);
+        padding: 0 12px;
+        font: inherit;
+      }
+
+      button {
+        cursor: pointer;
+      }
+
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #ffffff;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 14px;
+        align-items: start;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      .panel h2 {
+        margin: 0;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+        font-size: 15px;
+      }
+
+      textarea,
+      pre {
+        width: 100%;
+        min-height: 460px;
+        margin: 0;
+        border: 0;
+        padding: 14px;
+        resize: vertical;
+        color: #111827;
+        background: #ffffff;
+        font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      }
+
+      .findings {
+        margin: 14px 0 34px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      th,
+      td {
+        text-align: left;
+        border-bottom: 1px solid var(--border);
+        padding: 9px 10px;
+        font-size: 13px;
+        vertical-align: top;
+      }
+
+      th {
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .error {
+        color: var(--danger);
+        font-weight: 600;
+      }
+
+      .warning {
+        color: var(--warn);
+        font-weight: 600;
+      }
+
+      .empty {
+        padding: 12px;
+        color: var(--muted);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+
+      @media (max-width: 860px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>phi-pii-deid demo</h1>
+      <p>Local browser preview for synthetic FHIR JSON. Nothing is uploaded.</p>
+      <div class="toolbar">
+        <select id="mode">
+          <option value="default">default</option>
+          <option value="strict-safe-harbor">strict-safe-harbor</option>
+        </select>
+        <button class="primary" id="run">Scan and redact</button>
+        <button id="sample">Load sample</button>
+      </div>
+    </header>
+    <main>
+      <section class="grid">
+        <div class="panel">
+          <h2>Input JSON</h2>
+          <textarea id="input" spellcheck="false"></textarea>
+        </div>
+        <div class="panel">
+          <h2>Redacted JSON</h2>
+          <pre id="output"></pre>
+        </div>
+      </section>
+      <section class="findings" id="findings"></section>
+    </main>
+    <script>
+      const sample = {
+        resourceType: "Bundle",
+        type: "collection",
+        entry: [
+          {
+            resource: {
+              resourceType: "Patient",
+              id: "patient-demo-001",
+              identifier: [{ system: "https://example.invalid/mrn", value: "MRN-ABC12345" }],
+              name: [{ family: "Rivera", given: ["Avery"] }],
+              telecom: [{ system: "phone", value: "555-123-4567" }],
+              birthDate: "1974-08-15",
+              address: [{ line: ["100 Demo Street"], city: "Sampleton", state: "MA" }]
+            }
+          },
+          {
+            resource: {
+              resourceType: "Observation",
+              id: "observation-demo-001",
+              status: "final",
+              code: { coding: [{ system: "http://loinc.org", code: "718-7", display: "Hemoglobin [Mass/volume] in Blood" }] },
+              subject: { reference: "Patient/patient-demo-001" },
+              effectiveDateTime: "2026-01-20T14:45:00Z",
+              note: [{ text: "Patient Avery Rivera called from 555-123-4567." }],
+              valueQuantity: { value: 13.2, unit: "g/dL", system: "http://unitsofmeasure.org", code: "g/dL" }
+            }
+          }
+        ]
+      };
+
+      const rules = [
+        ["field.name", "Name", "[REDACTED_NAME]", "error", (s, v) => has(s, "name") && primitive(v)],
+        ["field.address", "Address", "[REDACTED_ADDRESS]", "error", (s, v) => has(s, "address") && primitive(v)],
+        ["field.telecom", "Telecom", "[REDACTED_TELECOM]", "error", (s, v) => has(s, "telecom") && exact(s, "value") && primitive(v)],
+        ["field.birthDate", "Birth Date", "[REDACTED_BIRTH_DATE]", "error", (s, v) => exact(s, "birthDate") && primitive(v)],
+        ["field.identifier", "Identifier", "[REDACTED_IDENTIFIER]", "error", (s, v) => !safeMeta(s) && (exact(s, "id") || hasAny(s, ["identifier", "mrn", "ssn"])) && primitive(v)],
+        ["field.url", "URL", "[REDACTED_URL]", "warning", (s, v) => !safeMeta(s) && hasAny(s, ["url", "reference"]) && primitive(v)],
+        ["field.note", "Free Text Note", "[REDACTED_NOTE]", "warning", (s, v) => !safeMeta(s) && (hasAny(s, ["note", "comment"]) || exact(s, "div") || exact(s, "display")) && primitive(v)],
+        ["safeharbor.date", "Date Element", "[REDACTED_DATE]", "error", (s, v, m) => m === "strict-safe-harbor" && !safeMeta(s) && !exact(s, "year") && typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v)],
+        ["safeharbor.ip", "IP Address", "[REDACTED_IP]", "error", (s, v, m) => m === "strict-safe-harbor" && typeof v === "string" && /\b(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)\b/.test(v)]
+      ];
+
+      const valueRules = [
+        ["value.email", "Email", "[REDACTED_EMAIL]", "error", /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i],
+        ["value.phone", "Phone", "[REDACTED_PHONE]", "error", /\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}\b/],
+        ["value.ssn", "SSN", "[REDACTED_IDENTIFIER]", "error", /\b\d{3}-\d{2}-\d{4}\b/],
+        ["value.mrn", "MRN-like Identifier", "[REDACTED_IDENTIFIER]", "error", /\b(?:MRN|MEDREC|PATIENT)[-:\s]*[A-Z0-9]{4,}\b/i],
+        ["value.url", "URL", "[REDACTED_URL]", "warning", /\bhttps?:\/\/[^\s"]+/i],
+        ["value.timestamp", "Exact Timestamp", "[REDACTED_TIMESTAMP]", "warning", /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})\b/]
+      ];
+
+      function exact(segments, name) {
+        return (segments.at(-1) || "").toLowerCase() === name.toLowerCase();
+      }
+
+      function has(segments, name) {
+        return segments.some((segment) => segment.toLowerCase() === name);
+      }
+
+      function hasAny(segments, names) {
+        return names.some((name) => has(segments, name));
+      }
+
+      function primitive(value) {
+        return value === null || ["string", "number", "boolean"].includes(typeof value);
+      }
+
+      function safeMeta(segments) {
+        const key = segments.at(-1) || "";
+        const prev = (segments.at(-2) || "").toLowerCase();
+        const coding = has(segments, "coding") || has(segments, "code");
+        return ["resourceType", "status", "gender", "language"].includes(key) ||
+          (coding && ["system", "code", "display", "version", "unit"].includes(key.toLowerCase())) ||
+          ["meta", "category", "interpretation"].includes(prev) ||
+          has(segments, "valueQuantity") ||
+          has(segments, "valueCodeableConcept");
+      }
+
+      function pathFor(parent, key) {
+        return typeof key === "number" ? `${parent}[${key}]` : parent === "$" ? `$.${key}` : `${parent}.${key}`;
+      }
+
+      function scanNode(value, path, segments, mode, findings) {
+        for (const [id, label, placeholder, severity, match] of rules) {
+          if (match(segments, value, mode)) findings.push({ path, id, label, placeholder, severity });
+        }
+        if (typeof value === "string") {
+          for (const [id, label, placeholder, severity, pattern] of valueRules) {
+            if (pattern.test(value)) findings.push({ path, id, label, placeholder, severity });
+          }
+        }
+        if (Array.isArray(value)) value.forEach((item, i) => scanNode(item, pathFor(path, i), segments, mode, findings));
+        else if (value && typeof value === "object") Object.entries(value).forEach(([key, child]) => scanNode(child, pathFor(path, key), [...segments, key], mode, findings));
+      }
+
+      function redactNode(value, path, segments, mode) {
+        const findings = [];
+        scanNode(value, path, segments, mode, findings);
+        if (findings.length && primitive(value)) return findings[0].placeholder;
+        if (Array.isArray(value)) return value.map((item, i) => redactNode(item, pathFor(path, i), segments, mode));
+        if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, redactNode(child, pathFor(path, key), [...segments, key], mode)]));
+        return value;
+      }
+
+      function run() {
+        const mode = document.querySelector("#mode").value;
+        const findings = [];
+        try {
+          const json = JSON.parse(document.querySelector("#input").value);
+          scanNode(json, "$", [], mode, findings);
+          document.querySelector("#output").textContent = JSON.stringify(redactNode(json, "$", [], mode), null, 2);
+          renderFindings(findings);
+        } catch (error) {
+          document.querySelector("#output").textContent = String(error.message || error);
+          renderFindings([]);
+        }
+      }
+
+      function renderFindings(findings) {
+        const root = document.querySelector("#findings");
+        if (!findings.length) {
+          root.innerHTML = '<div class="empty">No findings.</div>';
+          return;
+        }
+        root.innerHTML = `<table><thead><tr><th>Severity</th><th>Path</th><th>Rule</th><th>Placeholder</th></tr></thead><tbody>${findings
+          .map((f) => `<tr><td class="${f.severity}">${f.severity}</td><td>${escapeHtml(f.path)}</td><td>${escapeHtml(f.id)}</td><td>${escapeHtml(f.placeholder)}</td></tr>`)
+          .join("")}</tbody></table>`;
+      }
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char]);
+      }
+
+      document.querySelector("#sample").addEventListener("click", () => {
+        document.querySelector("#input").value = JSON.stringify(sample, null, 2);
+        run();
+      });
+      document.querySelector("#run").addEventListener("click", run);
+      document.querySelector("#input").value = JSON.stringify(sample, null, 2);
+      run();
+    </script>
+  </body>
+</html>

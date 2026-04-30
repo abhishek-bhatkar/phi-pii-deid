@@ -121,6 +121,48 @@ test("strict safe harbor mode adds broader identifier checks", () => {
   assert.equal(verifyJson(JSON.parse(redacted), { mode: "strict-safe-harbor" }).passed, true);
 });
 
+test("FHIR-aware rules preserve clinical coding metadata", () => {
+  const json = {
+    resourceType: "Observation",
+    id: "observation-demo-002",
+    status: "final",
+    code: {
+      coding: [
+        {
+          system: "http://loinc.org",
+          code: "718-7",
+          display: "Hemoglobin [Mass/volume] in Blood"
+        }
+      ]
+    },
+    valueQuantity: {
+      value: 13.2,
+      unit: "g/dL",
+      system: "http://unitsofmeasure.org",
+      code: "g/dL"
+    },
+    subject: {
+      reference: "Patient/patient-demo-002"
+    }
+  };
+
+  const result = deidentifyJson(json, { mode: "strict-safe-harbor" });
+  const output = JSON.stringify(result.json);
+  const paths = new Set(result.findings.map((finding) => finding.path));
+
+  assert.equal(result.json.status, "final");
+  assert.equal(result.json.code.coding[0].system, "http://loinc.org");
+  assert.equal(result.json.code.coding[0].code, "718-7");
+  assert.equal(result.json.code.coding[0].display, "Hemoglobin [Mass/volume] in Blood");
+  assert.equal(result.json.valueQuantity.unit, "g/dL");
+  assert.equal(result.json.valueQuantity.system, "http://unitsofmeasure.org");
+  assert.equal(result.json.valueQuantity.code, "g/dL");
+  assert.match(output, /\[REDACTED_IDENTIFIER\]/);
+  assert.match(output, /\[REDACTED_URL\]|\[REDACTED_IDENTIFIER\]/);
+  assert.equal(paths.has("$.code.coding[0].display"), false);
+  assert.equal(paths.has("$.valueQuantity.system"), false);
+});
+
 test("CMS report mode suppresses small aggregate summary counts", async () => {
   const json = await fixture("synthetic-safe-bundle.json");
   json.entry[0].resource.note = [{ text: "Synthetic note for report count suppression." }];

@@ -17,6 +17,7 @@ interface ValueRule {
   severity: Finding["severity"];
   reason: string;
   modes?: DeidMode[];
+  skipSafeFhirMetadata?: boolean;
   pattern: RegExp;
 }
 
@@ -24,13 +25,30 @@ const exact = (segments: string[], name: string): boolean =>
   segments[segments.length - 1]?.toLowerCase() === name.toLowerCase();
 
 const has = (segments: string[], name: string): boolean =>
-  segments.some((segment) => segment.toLowerCase() === name);
+  segments.some((segment) => segment.toLowerCase() === name.toLowerCase());
 
 const hasAny = (segments: string[], names: string[]): boolean =>
   names.some((name) => has(segments, name));
 
 const hasKeyContainingAny = (segments: string[], names: string[]): boolean =>
   segments.some((segment) => names.some((name) => segment.toLowerCase().includes(name.toLowerCase())));
+
+const parent = (segments: string[]): string | undefined => segments[segments.length - 2]?.toLowerCase();
+
+const inCoding = (segments: string[]): boolean => has(segments, "coding") || has(segments, "code");
+
+const inSafeCodingMetadata = (segments: string[]): boolean =>
+  inCoding(segments) && ["system", "code", "display", "version", "unit"].includes(segments[segments.length - 1]?.toLowerCase() ?? "");
+
+const inSafeFhirMetadata = (segments: string[]): boolean =>
+  ["resourceType", "status", "gender", "language"].includes(segments[segments.length - 1] ?? "") ||
+  inSafeCodingMetadata(segments) ||
+  parent(segments) === "meta" ||
+  parent(segments) === "category" ||
+  parent(segments) === "interpretation" ||
+  parent(segments) === "unit" ||
+  has(segments, "valueQuantity") ||
+  has(segments, "valueCodeableConcept");
 
 const isPrimitive = (value: JsonValue): boolean =>
   value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
@@ -95,7 +113,9 @@ export const FIELD_RULES: FieldRule[] = [
     severity: "error",
     reason: "Identifiers may include MRNs, account numbers, or national IDs.",
     matches: (segments, value) =>
-      (exact(segments, "id") || hasAny(segments, ["identifier", "mrn", "ssn"])) && isPrimitive(value)
+      !inSafeFhirMetadata(segments) &&
+      (exact(segments, "id") || hasAny(segments, ["identifier", "mrn", "ssn"])) &&
+      isPrimitive(value)
   },
   {
     id: "field.url",
@@ -103,7 +123,7 @@ export const FIELD_RULES: FieldRule[] = [
     placeholder: "[REDACTED_URL]",
     severity: "warning",
     reason: "URLs may contain tenant, patient, or environment identifiers.",
-    matches: (segments, value) => hasAny(segments, ["url", "reference"]) && isPrimitive(value)
+    matches: (segments, value) => !inSafeFhirMetadata(segments) && hasAny(segments, ["url", "reference"]) && isPrimitive(value)
   },
   {
     id: "field.note",
@@ -112,6 +132,7 @@ export const FIELD_RULES: FieldRule[] = [
     severity: "warning",
     reason: "Free text can contain unstructured PHI/PII.",
     matches: (segments, value) =>
+      !inSafeFhirMetadata(segments) &&
       (hasAny(segments, ["note", "comment"]) || exact(segments, "div") || exact(segments, "display")) &&
       isPrimitive(value)
   },
@@ -134,7 +155,7 @@ export const FIELD_RULES: FieldRule[] = [
     reason: "Strict Safe Harbor mode removes date elements directly related to an individual except year.",
     modes: ["strict-safe-harbor"],
     matches: (segments, value) =>
-      !exact(segments, "year") && isNonEmptyString(value) && /^\d{4}-\d{2}-\d{2}$/.test(value)
+      !inSafeFhirMetadata(segments) && !exact(segments, "year") && isNonEmptyString(value) && /^\d{4}-\d{2}-\d{2}$/.test(value)
   },
   {
     id: "safeharbor.age_over_89",
@@ -258,6 +279,7 @@ export const VALUE_RULES: ValueRule[] = [
     placeholder: "[REDACTED_URL]",
     severity: "warning",
     reason: "Value matches a URL pattern.",
+    skipSafeFhirMetadata: true,
     pattern: /\bhttps?:\/\/[^\s"]+/i
   },
   {
@@ -329,7 +351,12 @@ export function detectFindings(
     return fieldFindings;
   }
 
-  const valueFindings = VALUE_RULES.filter((rule) => appliesInMode(rule.modes, mode) && rule.pattern.test(value)).map((rule) => ({
+  const valueFindings = VALUE_RULES.filter(
+    (rule) =>
+      appliesInMode(rule.modes, mode) &&
+      !(rule.skipSafeFhirMetadata && inSafeFhirMetadata(segments)) &&
+      rule.pattern.test(value)
+  ).map((rule) => ({
     path,
     ruleId: rule.id,
     label: rule.label,
