@@ -1,0 +1,110 @@
+{
+  "resourceType": "Bundle",
+  "id": "bundle-demo-001",
+  "type": "collection",
+  "entry": [
+    {
+      "resource": {
+        "resourceType": "Patient",
+        "id": "patient-demo-001",
+        "identifier": [
+          {
+            "system": "https://example.invalid/mrn",
+            "value": "MRN-ABC12345"
+          },
+          {
+            "system": "https://example.invalid/ssn",
+            "value": "123-45-6789"
+          }
+        ],
+        "name": [
+          {
+            "family": "Rivera",
+            "given": ["Avery"]
+          }
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "555-123-4567"
+          },
+          {
+            "system": "email",
+            "value": "avery.rivera@example.invalid"
+          }
+        ],
+        "gender": "female",
+        "birthDate": "1974-08-15",
+        "address": [
+          {
+            "line": ["100 Demo Street"],
+            "city": "Sampleton",
+            "state": "MA",
+            "postalCode": "02110"
+          }
+        ]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Practitioner",
+        "id": "practitioner-demo-001",
+        "name": [
+          {
+            "family": "Morgan",
+            "given": ["Jordan"]
+          }
+        ],
+        "telecom": [
+          {
+            "system": "phone",
+            "value": "+1 555 222 1010"
+          }
+        ]
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Encounter",
+        "id": "encounter-demo-001",
+        "subject": {
+          "reference": "Patient/patient-demo-001"
+        },
+        "period": {
+          "start": "2026-01-20T14:30:00Z",
+          "end": "2026-01-20T15:45:00Z"
+        }
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Observation",
+        "id": "observation-demo-001",
+        "subject": {
+          "reference": "Patient/patient-demo-001"
+        },
+        "effectiveDateTime": "2026-01-20T14:45:00Z",
+        "note": [
+          {
+            "text": "Patient Avery Rivera called from 555-123-4567 about the lab result."
+          }
+        ],
+        "valueString": "Result discussed with family."
+      }
+    },
+    {
+      "resource": {
+        "resourceType": "Condition",
+        "id": "condition-demo-001",
+        "subject": {
+          "reference": "Patient/patient-demo-001"
+        },
+        "recordedDate": "2026-01-20T13:00:00Z",
+        "text": {
+          "status": "generated",
+          "div": "Synthetic condition narrative for Avery Rivera."
+        }
+      }
+    }
+  ]
+}

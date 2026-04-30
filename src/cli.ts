@@ -1,0 +1,147 @@
+#!/usr/bin/env node
+import { extname, join, dirname, basename } from "node:path";
+import { deidentifyJson } from "./redactor.js";
+import { renderCsvReport, renderMarkdownReport, renderScanText } from "./report.js";
+import { scanJson } from "./scanner.js";
+import { verifyJson } from "./verifier.js";
+import { readJsonFile, writeJsonFile, writeTextFile } from "./io.js";
+import type { DeidMode } from "./types.js";
+
+interface Args {
+  command?: string;
+  file?: string;
+  out?: string;
+  csvOut?: string;
+  mode: DeidMode;
+  cmsReport: boolean;
+  help: boolean;
+}
+
+function parseArgs(argv: string[]): Args {
+  const args: Args = { cmsReport: false, help: false, mode: "default" };
+  const positional: string[] = [];
+
+  for (let index = 0; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === "--help" || arg === "-h") {
+      args.help = true;
+    } else if (arg === "--out") {
+      const out = argv[index + 1];
+      if (!out) {
+        throw new Error("--out requires a file path");
+      }
+      args.out = out;
+      index += 1;
+    } else if (arg === "--csv-out") {
+      const csvOut = argv[index + 1];
+      if (!csvOut) {
+        throw new Error("--csv-out requires a file path");
+      }
+      args.csvOut = csvOut;
+      index += 1;
+    } else if (arg === "--mode") {
+      const mode = argv[index + 1];
+      if (mode !== "default" && mode !== "strict-safe-harbor") {
+        throw new Error("--mode must be default or strict-safe-harbor");
+      }
+      args.mode = mode;
+      index += 1;
+    } else if (arg === "--cms-report") {
+      args.cmsReport = true;
+    } else if (arg.startsWith("--")) {
+      throw new Error(`Unknown option: ${arg}`);
+    } else {
+      positional.push(arg);
+    }
+  }
+
+  [args.command, args.file] = positional;
+  return args;
+}
+
+function usage(): string {
+  return [
+    "Usage:",
+    "  phi-pii-deid scan <file> [--mode default|strict-safe-harbor]",
+    "  phi-pii-deid deidentify <file> --out <file> [--mode default|strict-safe-harbor]",
+    "  phi-pii-deid verify <file> [--mode default|strict-safe-harbor]",
+    "  phi-pii-deid report <file> --out <file.md> [--csv-out <file.csv>] [--mode default|strict-safe-harbor] [--cms-report]",
+    "",
+    "Offline deterministic helper for making local FHIR JSON artifacts safer to share."
+  ].join("\n");
+}
+
+function defaultCsvPath(markdownPath: string): string {
+  const extension = extname(markdownPath);
+  if (extension) {
+    return join(dirname(markdownPath), `${basename(markdownPath, extension)}.csv`);
+  }
+  return `${markdownPath}.csv`;
+}
+
+async function main(argv: string[]): Promise<number> {
+  const args = parseArgs(argv);
+
+  if (args.help || !args.command) {
+    console.log(usage());
+    return args.help ? 0 : 1;
+  }
+
+  if (!args.file) {
+    throw new Error(`${args.command} requires an input file`);
+  }
+
+  const json = await readJsonFile(args.file);
+
+  if (args.command === "scan") {
+    const result = scanJson(json, args.file, { mode: args.mode });
+    console.log(renderScanText(result));
+    return result.findings.length > 0 ? 2 : 0;
+  }
+
+  if (args.command === "deidentify") {
+    if (!args.out) {
+      throw new Error("deidentify requires --out <file>");
+    }
+    const result = deidentifyJson(json, { mode: args.mode });
+    await writeJsonFile(args.out, result.json);
+    console.log(`Wrote de-identified JSON to ${args.out}`);
+    console.log(`Mode: ${args.mode}`);
+    console.log(`Redacted ${result.findings.length} rule hits.`);
+    return 0;
+  }
+
+  if (args.command === "verify") {
+    const result = verifyJson(json, { mode: args.mode });
+    if (result.passed) {
+      console.log("PASS: no known PHI/PII rule hits remain.");
+      return 0;
+    }
+    console.error(`FAIL: ${result.findings.length} known PHI/PII rule hits remain.`);
+    console.error(renderScanText({ file: args.file, findings: result.findings, ruleSummaries: [] }));
+    return 2;
+  }
+
+  if (args.command === "report") {
+    if (!args.out) {
+      throw new Error("report requires --out <file>");
+    }
+    const csvOut = args.csvOut ?? defaultCsvPath(args.out);
+    await writeTextFile(args.out, renderMarkdownReport(json, args.file, { cmsReport: args.cmsReport, mode: args.mode }));
+    await writeTextFile(csvOut, renderCsvReport(json, args.file, { cmsReport: args.cmsReport, mode: args.mode }));
+    console.log(`Wrote Markdown report to ${args.out}`);
+    console.log(`Wrote CSV report to ${csvOut}`);
+    return 0;
+  }
+
+  throw new Error(`Unknown command: ${args.command}`);
+}
+
+main(process.argv.slice(2))
+  .then((code) => {
+    process.exitCode = code;
+  })
+  .catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exitCode = 1;
+  });

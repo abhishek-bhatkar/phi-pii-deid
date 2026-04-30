@@ -1,0 +1,36 @@
+{
+  "name": "phi-pii-deid",
+  "version": "0.1.0",
+  "description": "Offline share-safe helper for scanning, redacting, verifying, and reporting likely PHI/PII in FHIR JSON artifacts.",
+  "type": "module",
+  "bin": {
+    "phi-pii-deid": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "lint": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/*.test.js",
+    "prepack": "npm run build",
+    "package:dry-run": "npm pack --dry-run"
+  },
+  "keywords": [
+    "fhir",
+    "phi",
+    "pii",
+    "de-identification",
+    "cli"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.19.17",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
