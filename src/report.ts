@@ -90,3 +90,9 @@ export function renderCsvReport(json: JsonValue, file = "input", options: Report
 
   return `${rows.map((row) => row.map(csvEscape).join(",")).join("\n")}\n`;
 }
+
+export function renderJsonReport(json: JsonValue, file = "input", options: ReportOptions = {}): string {
+  const scan = scanJson(json, file, options);
+  const verification = verifyJson(json, options);
+  return `${JSON.stringify({ file, scan, verification }, null, 2)}\n`;
+}

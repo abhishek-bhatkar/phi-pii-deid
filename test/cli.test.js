@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { copyFile, mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -111,4 +111,59 @@ test("explain lists rules and explains a specific rule", () => {
   assert.equal(rule.status, 0, rule.stderr);
   assert.match(rule.stdout, /Rule: field\.identifier/);
   assert.match(rule.stdout, /Placeholder: \[REDACTED_IDENTIFIER\]/);
+});
+
+test("scan and verify support JSON stdout", async () => {
+  const scan = run(["scan", unsafeFixture, "--json"]);
+  assert.equal(scan.status, 2);
+  const scanJson = JSON.parse(scan.stdout);
+  assert.equal(scanJson.summary.mode, "default");
+  assert.equal(scanJson.summary.files, 1);
+  assert.ok(scanJson.summary.findings > 0);
+
+  const dir = await mkdtemp(join(tmpdir(), "phi-pii-deid-"));
+  const sanitized = join(dir, "sanitized.json");
+  assert.equal(run(["deidentify", unsafeFixture, "--out", sanitized]).status, 0);
+
+  const verify = run(["verify", sanitized, "--json"]);
+  assert.equal(verify.status, 0);
+  const verifyJson = JSON.parse(verify.stdout);
+  assert.equal(verifyJson.summary.passed, true);
+});
+
+test("report supports JSON output file", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "phi-pii-deid-"));
+  const markdown = join(dir, "report.md");
+  const json = join(dir, "report.json");
+
+  const result = run(["report", unsafeFixture, "--out", markdown, "--json-out", json]);
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(await readFile(json, "utf8"));
+  assert.equal(report.file, unsafeFixture);
+  assert.ok(report.scan.findings.length > 0);
+});
+
+test("config file can set mode and ignore rules or paths", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "phi-pii-deid-"));
+  const config = join(dir, "phi-pii-deid.json");
+  await writeFile(
+    config,
+    JSON.stringify(
+      {
+        ignorePaths: ["$.entry[0].resource.name*"],
+        ignoreRules: ["value.phone"],
+        mode: "strict-safe-harbor"
+      },
+      null,
+      2
+    )
+  );
+
+  const scan = run(["scan", unsafeFixture, "--json", "--config", config]);
+  assert.equal(scan.status, 2);
+  const output = JSON.parse(scan.stdout);
+  assert.equal(output.summary.mode, "strict-safe-harbor");
+  assert.equal(output.results[0].findings.some((finding) => finding.ruleId === "safeharbor.date"), true);
+  assert.equal(output.results[0].findings.some((finding) => finding.ruleId === "value.phone"), false);
+  assert.equal(output.results[0].findings.some((finding) => finding.path.startsWith("$.entry[0].resource.name")), false);
 });

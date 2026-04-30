@@ -36,13 +36,30 @@ export function summarizeRules(findings: Finding[]): RuleSummary[] {
   return [...counts.values()].sort((a, b) => a.ruleId.localeCompare(b.ruleId));
 }
 
+const escapeRegex = (value: string): string => value.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+
+function wildcardToRegex(pattern: string): RegExp {
+  return new RegExp(`^${pattern.split("*").map(escapeRegex).join(".*")}$`);
+}
+
+function filterFindings(findings: Finding[], options: ScanOptions): Finding[] {
+  const ignoredRules = new Set(options.ignoreRules ?? []);
+  const ignoredPathPatterns = (options.ignorePaths ?? []).map(wildcardToRegex);
+  return findings.filter(
+    (finding) =>
+      !ignoredRules.has(finding.ruleId) &&
+      !ignoredPathPatterns.some((pattern) => pattern.test(finding.path))
+  );
+}
+
 export function scanJson(json: JsonValue, file?: string, options: ScanOptions = {}): ScanResult {
   const findings: Finding[] = [];
   walk(json, "$", [], findings, options.mode ?? "default");
+  const filteredFindings = filterFindings(findings, options);
 
   return {
     file,
-    findings: findings.sort((a, b) => a.path.localeCompare(b.path) || a.ruleId.localeCompare(b.ruleId)),
-    ruleSummaries: summarizeRules(findings)
+    findings: filteredFindings.sort((a, b) => a.path.localeCompare(b.path) || a.ruleId.localeCompare(b.ruleId)),
+    ruleSummaries: summarizeRules(filteredFindings)
   };
 }

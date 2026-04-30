@@ -11,6 +11,8 @@ export type DeidMode = "default" | "strict-safe-harbor";
 
 export interface ScanOptions {
   mode?: DeidMode;
+  ignoreRules?: string[];
+  ignorePaths?: string[];
 }
 
 export interface ReportOptions extends ScanOptions {
@@ -57,4 +59,8 @@ export interface RuleDoc {
   mode: DeidMode;
   kind: "field" | "value";
   reason: string;
+}
+
+export interface DeidConfig extends ScanOptions {
+  cmsReport?: boolean;
 }
