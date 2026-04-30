@@ -6,6 +6,21 @@ This is a deterministic share-safe helper, not certified HIPAA/CMS de-identifica
 
 ## Quick Start
 
+Install from npm:
+
+```bash
+npm install -g phi-pii-deid
+```
+
+```bash
+phi-pii-deid scan input.json
+phi-pii-deid deidentify input.json --out sanitized.json
+phi-pii-deid verify sanitized.json
+phi-pii-deid report sanitized.json --out report.md
+```
+
+For local development:
+
 ```bash
 npm install
 npm test
