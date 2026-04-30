@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { extname, join, dirname, basename } from "node:path";
 import { deidentifyJson } from "./redactor.js";
+import { renderExplain } from "./explain.js";
+import { outputPathFor, resolveInputFiles } from "./inputs.js";
 import { renderCsvReport, renderMarkdownReport, renderScanText } from "./report.js";
 import { scanJson } from "./scanner.js";
 import { verifyJson } from "./verifier.js";
@@ -9,7 +11,7 @@ import type { DeidMode } from "./types.js";
 
 interface Args {
   command?: string;
-  file?: string;
+  inputs: string[];
   out?: string;
   csvOut?: string;
   mode: DeidMode;
@@ -18,7 +20,7 @@ interface Args {
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { cmsReport: false, help: false, mode: "default" };
+  const args: Args = { cmsReport: false, help: false, inputs: [], mode: "default" };
   const positional: string[] = [];
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -55,17 +57,19 @@ function parseArgs(argv: string[]): Args {
     }
   }
 
-  [args.command, args.file] = positional;
+  args.command = positional[0];
+  args.inputs = positional.slice(1);
   return args;
 }
 
 function usage(): string {
   return [
     "Usage:",
-    "  phi-pii-deid scan <file> [--mode default|strict-safe-harbor]",
-    "  phi-pii-deid deidentify <file> --out <file> [--mode default|strict-safe-harbor]",
-    "  phi-pii-deid verify <file> [--mode default|strict-safe-harbor]",
+    "  phi-pii-deid scan <file|dir|glob...> [--mode default|strict-safe-harbor]",
+    "  phi-pii-deid deidentify <file|dir|glob...> --out <file|dir> [--mode default|strict-safe-harbor]",
+    "  phi-pii-deid verify <file|dir|glob...> [--mode default|strict-safe-harbor]",
     "  phi-pii-deid report <file> --out <file.md> [--csv-out <file.csv>] [--mode default|strict-safe-harbor] [--cms-report]",
+    "  phi-pii-deid explain [rule-id]",
     "",
     "Offline deterministic helper for making local FHIR JSON artifacts safer to share."
   ].join("\n");
@@ -79,6 +83,10 @@ function defaultCsvPath(markdownPath: string): string {
   return `${markdownPath}.csv`;
 }
 
+function hasStructuredInput(inputs: Array<{ path: string; relativePath: string }>): boolean {
+  return inputs.length > 1 || inputs.some((input) => input.relativePath !== basename(input.path));
+}
+
 async function main(argv: string[]): Promise<number> {
   const args = parseArgs(argv);
 
@@ -87,38 +95,68 @@ async function main(argv: string[]): Promise<number> {
     return args.help ? 0 : 1;
   }
 
-  if (!args.file) {
-    throw new Error(`${args.command} requires an input file`);
+  if (args.command === "explain") {
+    console.log(renderExplain(args.inputs[0]));
+    return 0;
   }
 
-  const json = await readJsonFile(args.file);
+  if (args.inputs.length === 0) {
+    throw new Error(`${args.command} requires at least one input`);
+  }
 
   if (args.command === "scan") {
-    const result = scanJson(json, args.file, { mode: args.mode });
-    console.log(renderScanText(result));
-    return result.findings.length > 0 ? 2 : 0;
+    const inputs = await resolveInputFiles(args.inputs);
+    const showHeaders = hasStructuredInput(inputs);
+    let findingCount = 0;
+    for (const input of inputs) {
+      const json = await readJsonFile(input.path);
+      const result = scanJson(json, input.path, { mode: args.mode });
+      findingCount += result.findings.length;
+      console.log(showHeaders ? `${input.path}\n${renderScanText(result)}` : renderScanText(result));
+    }
+    return findingCount > 0 ? 2 : 0;
   }
 
   if (args.command === "deidentify") {
     if (!args.out) {
       throw new Error("deidentify requires --out <file>");
     }
-    const result = deidentifyJson(json, { mode: args.mode });
-    await writeJsonFile(args.out, result.json);
-    console.log(`Wrote de-identified JSON to ${args.out}`);
+    const inputs = await resolveInputFiles(args.inputs);
+    const structuredInput = hasStructuredInput(inputs);
+    if (structuredInput && extname(args.out)) {
+      throw new Error("deidentify requires --out <directory> when processing multiple inputs");
+    }
+    let findingCount = 0;
+    for (const input of inputs) {
+      const json = await readJsonFile(input.path);
+      const result = deidentifyJson(json, { mode: args.mode });
+      const outputPath = outputPathFor(input, args.out, structuredInput);
+      findingCount += result.findings.length;
+      await writeJsonFile(outputPath, result.json);
+      console.log(`Wrote de-identified JSON to ${outputPath}`);
+    }
     console.log(`Mode: ${args.mode}`);
-    console.log(`Redacted ${result.findings.length} rule hits.`);
+    console.log(`Redacted ${findingCount} rule hits across ${inputs.length} file${inputs.length === 1 ? "" : "s"}.`);
     return 0;
   }
 
   if (args.command === "verify") {
-    const result = verifyJson(json, { mode: args.mode });
-    if (result.passed) {
-      console.log("PASS: no known PHI/PII rule hits remain.");
+    const inputs = await resolveInputFiles(args.inputs);
+    let findingCount = 0;
+    for (const input of inputs) {
+      const json = await readJsonFile(input.path);
+      const result = verifyJson(json, { mode: args.mode });
+      findingCount += result.findings.length;
+      if (result.passed) {
+        console.log(`${input.path}: PASS`);
+      } else {
+        console.error(`${input.path}: FAIL: ${result.findings.length} known PHI/PII rule hits remain.`);
+        console.error(renderScanText({ file: input.path, findings: result.findings, ruleSummaries: [] }));
+      }
+    }
+    if (findingCount === 0) {
       return 0;
     }
-    console.error(`FAIL: ${result.findings.length} known PHI/PII rule hits remain.`);
-    console.error(renderScanText({ file: args.file, findings: result.findings, ruleSummaries: [] }));
     return 2;
   }
 
@@ -126,9 +164,13 @@ async function main(argv: string[]): Promise<number> {
     if (!args.out) {
       throw new Error("report requires --out <file>");
     }
+    if (args.inputs.length !== 1) {
+      throw new Error("report currently accepts exactly one input file");
+    }
+    const json = await readJsonFile(args.inputs[0]);
     const csvOut = args.csvOut ?? defaultCsvPath(args.out);
-    await writeTextFile(args.out, renderMarkdownReport(json, args.file, { cmsReport: args.cmsReport, mode: args.mode }));
-    await writeTextFile(csvOut, renderCsvReport(json, args.file, { cmsReport: args.cmsReport, mode: args.mode }));
+    await writeTextFile(args.out, renderMarkdownReport(json, args.inputs[0], { cmsReport: args.cmsReport, mode: args.mode }));
+    await writeTextFile(csvOut, renderCsvReport(json, args.inputs[0], { cmsReport: args.cmsReport, mode: args.mode }));
     console.log(`Wrote Markdown report to ${args.out}`);
     console.log(`Wrote CSV report to ${csvOut}`);
     return 0;

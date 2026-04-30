@@ -1,4 +1,4 @@
-import type { DeidMode, Finding, JsonValue } from "./types.js";
+import type { DeidMode, Finding, JsonValue, RuleDoc } from "./types.js";
 
 interface FieldRule {
   id: string;
@@ -330,6 +330,31 @@ export const VALUE_RULES: ValueRule[] = [
 
 const appliesInMode = (modes: DeidMode[] | undefined, mode: DeidMode): boolean =>
   !modes || modes.includes(mode);
+
+const ruleMode = (modes: DeidMode[] | undefined): DeidMode => modes?.[0] ?? "default";
+
+export function listRuleDocs(): RuleDoc[] {
+  return [
+    ...FIELD_RULES.map((rule) => ({
+      kind: "field" as const,
+      label: rule.label,
+      mode: ruleMode(rule.modes),
+      placeholder: rule.placeholder,
+      reason: rule.reason,
+      ruleId: rule.id,
+      severity: rule.severity
+    })),
+    ...VALUE_RULES.map((rule) => ({
+      kind: "value" as const,
+      label: rule.label,
+      mode: ruleMode(rule.modes),
+      placeholder: rule.placeholder,
+      reason: rule.reason,
+      ruleId: rule.id,
+      severity: rule.severity
+    }))
+  ].sort((a, b) => a.ruleId.localeCompare(b.ruleId));
+}
 
 export function detectFindings(
   path: string,

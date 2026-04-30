@@ -48,3 +48,13 @@ export interface VerificationResult {
   passed: boolean;
   findings: Finding[];
 }
+
+export interface RuleDoc {
+  ruleId: string;
+  label: string;
+  placeholder: string;
+  severity: Severity;
+  mode: DeidMode;
+  kind: "field" | "value";
+  reason: string;
+}

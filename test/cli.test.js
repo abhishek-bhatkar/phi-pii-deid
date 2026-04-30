@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -71,4 +71,44 @@ test("verify exits non-zero for unsafe input", () => {
   const result = run(["verify", unsafeFixture]);
   assert.equal(result.status, 2);
   assert.match(result.stderr, /FAIL/);
+});
+
+test("scan supports directories and quoted globs", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "phi-pii-deid-"));
+  await mkdir(join(dir, "nested"));
+  await copyFile(unsafeFixture, join(dir, "nested", "unsafe.json"));
+
+  const directoryScan = run(["scan", dir]);
+  assert.equal(directoryScan.status, 2);
+  assert.match(directoryScan.stdout, /unsafe\.json/);
+
+  const globScan = run(["scan", `${dir}/**/*.json`]);
+  assert.equal(globScan.status, 2);
+  assert.match(globScan.stdout, /field\.name/);
+});
+
+test("deidentify supports directory input with output directory", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "phi-pii-deid-"));
+  const inputDir = join(dir, "input");
+  const outputDir = join(dir, "output");
+  await mkdir(join(inputDir, "nested"), { recursive: true });
+  await copyFile(unsafeFixture, join(inputDir, "nested", "unsafe.json"));
+
+  const result = run(["deidentify", inputDir, "--out", outputDir]);
+  assert.equal(result.status, 0, result.stderr);
+
+  const output = await readFile(join(outputDir, "nested", "unsafe.json"), "utf8");
+  assert.match(output, /\[REDACTED_NAME\]/);
+  assert.equal(output.includes("Avery"), false);
+});
+
+test("explain lists rules and explains a specific rule", () => {
+  const list = run(["explain"]);
+  assert.equal(list.status, 0, list.stderr);
+  assert.match(list.stdout, /field\.identifier/);
+
+  const rule = run(["explain", "field.identifier"]);
+  assert.equal(rule.status, 0, rule.stderr);
+  assert.match(rule.stdout, /Rule: field\.identifier/);
+  assert.match(rule.stdout, /Placeholder: \[REDACTED_IDENTIFIER\]/);
 });

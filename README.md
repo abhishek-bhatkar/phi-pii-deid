@@ -14,9 +14,12 @@ npm install -g phi-pii-deid
 
 ```bash
 phi-pii-deid scan input.json
+phi-pii-deid scan "fixtures/**/*.json"
 phi-pii-deid deidentify input.json --out sanitized.json
+phi-pii-deid deidentify fixtures --out sanitized-fixtures
 phi-pii-deid verify sanitized.json
 phi-pii-deid report sanitized.json --out report.md
+phi-pii-deid explain field.identifier
 ```
 
 For local development:
@@ -50,13 +53,16 @@ Open [demo/index.html](demo/index.html) in a browser for a local paste-and-previ
 ## Commands
 
 ```bash
-phi-pii-deid scan <file> [--mode default|strict-safe-harbor]
-phi-pii-deid deidentify <file> --out <file> [--mode default|strict-safe-harbor]
-phi-pii-deid verify <file> [--mode default|strict-safe-harbor]
+phi-pii-deid scan <file|dir|glob...> [--mode default|strict-safe-harbor]
+phi-pii-deid deidentify <file|dir|glob...> --out <file|dir> [--mode default|strict-safe-harbor]
+phi-pii-deid verify <file|dir|glob...> [--mode default|strict-safe-harbor]
 phi-pii-deid report <file> --out <file.md> [--csv-out <file.csv>] [--mode default|strict-safe-harbor] [--cms-report]
+phi-pii-deid explain [rule-id]
 ```
 
 From source, use `node dist/cli.js ...` instead of `phi-pii-deid ...`.
+
+Quoted globs such as `"fixtures/**/*.json"` are expanded by the CLI. Directory de-identification preserves relative paths under the output directory.
 
 ## Modes
 
